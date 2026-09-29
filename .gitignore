@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Datasets (never commit)
+data/raw/*
+data/interim/
+data/yolo/*
+data/severity_crops/*
+!data/**/.gitkeep
+
+# Training outputs and weights (never commit)
+runs/
+models/*
+!models/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Generated reports
+reports/*
+!reports/.gitkeep

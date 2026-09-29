@@ -1,0 +1,16 @@
+# Install a CUDA build of PyTorch first if you have an NVIDIA GPU (see README),
+# otherwise pip installs the CPU build.
+torch>=2.1
+torchvision>=0.16
+ultralytics>=8.3.0
+opencv-python>=4.8
+numpy>=1.24
+pandas>=2.2.2
+scikit-learn>=1.4
+matplotlib>=3.8
+streamlit>=1.46
+Pillow>=10.0
+PyYAML>=6.0
+tqdm>=4.66
+# Keras runs the MobileNetV2 classifier on the PyTorch backend (no TensorFlow needed).
+keras>=3.15

@@ -1,0 +1,159 @@
+# Road Damage Detection and Severity Assessment - project configuration.
+# All relative paths are resolved against the project root (the folder that
+# contains this file), not the current working directory.
+
+paths:
+  reports_dir: reports
+  runs_dir: runs/detect
+  models_dir: models
+
+dataset:
+  # Put the extracted RDD2022 India download anywhere under this folder.
+  # Images and XML files are discovered recursively.
+  # Currently: your own category dataset (XML made by src/annotate_boxes.py).
+  # To use RDD2022 India again: raw_dir: data/raw/RDD2022_India
+  raw_dir: data/raw/road_damage_assesment
+  # Intermediate output of convert_voc_to_yolo.py (labels + manifest).
+  interim_dir: data/interim
+  # Final Ultralytics-style dataset produced by split_dataset.py.
+  yolo_dir: data/yolo
+  image_extensions: [".jpg", ".jpeg", ".png", ".webp"]
+  annotation_extension: ".xml"
+  # Your own labelled images (Pascal VOC XML next to each image, e.g. made with
+  # src/annotate_boxes.py). They are added to the TRAINING split only, so
+  # validation and test stay pure RDD2022 India. Use [] to disable.
+  extra_dirs: []
+  # Only images that have a matching XML file are used. Images without XML
+  # (e.g. the unlabeled RDD2022 test folder) are never treated as negatives.
+  # Boxes whose clipped width or height is below this many pixels are dropped
+  # (and reported).
+  min_box_size_px: 1.0
+
+classes:
+  # YOLO class id -> class name used in data.yaml and in the UI.
+  names:
+    0: longitudinal_crack
+    1: transverse_crack
+    2: alligator_crack
+    3: pothole
+  # RDD2022 label code -> YOLO class id. Any other label code is ignored
+  # (and counted in the conversion summary).
+  source_codes:
+    D00: 0
+    D10: 1
+    D20: 2
+    D40: 3
+
+model:
+  # Pretrained Ultralytics checkpoint used as the starting point for training.
+  # Examples: yolo11n.pt (fastest), yolo11s.pt (more accurate).
+  name: yolo11n.pt
+  confidence: 0.25
+  iou: 0.45
+
+training:
+  image_size: 640
+  epochs: 100
+  batch: 16
+  workers: 4
+  patience: 20
+  seed: 42
+  device: auto          # auto | cpu | 0 | 0,1 | cuda:0
+  deterministic: true
+  run_name: rdd2022_india
+  # After training, best.pt is copied here for evaluation and the app.
+  export_weights_to: models/road_damage_yolo.pt
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+  seed: 42
+  # How related images are kept in the same split to reduce leakage:
+  #   random - independent per-image random split (default; RDD2022 India
+  #            filenames carry no reliable sequence/location information)
+  #   block  - group images by consecutive numeric id in the filename
+  #            (e.g. India_000123 -> block 123 // block_size). A heuristic to
+  #            keep neighbouring frames together.
+  #   regex  - group by the first capture group of group_regex applied to the
+  #            image filename stem.
+  strategy: regex
+  block_size: 50
+  # Keeps edited copies of one photo together (Roboflow names like 644_jpg.rf.<hash> -> group 644);
+  # other file names form their own group, i.e. a normal random split.
+  group_regex: '(\d+)_(?:jpg|jpeg|png)\.rf\.'
+  # copy | hardlink | symlink. Links save disk space; symlinks on Windows need
+  # Developer Mode or admin rights. Falls back to copy if linking fails.
+  link_mode: copy
+
+evaluation:
+  split: test
+  # Ultralytics evaluates mAP with a very low confidence threshold; these are
+  # the standard values and are kept separate from the UI thresholds.
+  confidence: 0.001
+  iou: 0.6
+  num_example_images: 12
+
+classifier:
+  # Whole-image MobileNetV2 classifier (Keras). Used by the app when present.
+  # It predicts the damage type of the whole photo; it does not draw boxes.
+  model_path: models/road_damage_mobilenetv2.keras.zip
+  image_size: 224
+  preprocessing: mobilenet_v2   # pixels scaled to [-1, 1]
+  # Order of the model's 4 outputs = alphabetical training-folder order
+  # (verified on the labelled category folders).
+  class_names: [alligator_crack, longitudinal_crack, pothole, transverse_crack]
+  # Below this top-class probability the app warns that the model is unsure.
+  min_confidence: 0.6
+
+inference:
+  # Weights used by evaluate_detector.py, crop_defects.py and the app.
+  weights: models/road_damage_yolo.pt
+  box_thickness: 2
+  font_scale: 0.6
+
+severity:
+  # auto      - trained classifier if model_path exists, otherwise the heuristic estimate
+  # model     - trained classifier only ("Not available" if missing)
+  # heuristic - rule-based estimate only
+  # none      - no severity
+  method: auto
+  # Written by src/train_severity.py (see src/severity.py for the format).
+  model_path: models/severity_classifier.pt
+  crops_dir: data/severity_crops
+  # Relative padding added around each box when cropping (0.1 = 10%).
+  crop_padding: 0.10
+  min_crop_size_px: 8
+
+  # Rule-based ESTIMATE used until a trained classifier exists. These are
+  # documented starting values, not values learned from ground truth;
+  # train_severity.py reports how well they agree with your labels.
+  heuristic:
+    # Pixels this many grey levels darker than the crop median count as damage.
+    dark_delta: 25
+    # Size (fraction of the image) that counts as maximal: crack length for
+    # linear classes, sqrt(area fraction) for area defects.
+    size_ref:
+      linear: 0.6
+      area: 0.4
+    # Dark-pixel fraction that counts as maximal density.
+    density_ref: 0.25
+    # score = size_weight * size + (1 - size_weight) * density
+    size_weight: 0.6
+    # score < 0.33 -> Low, < 0.66 -> Medium, otherwise High
+    thresholds: [0.33, 0.66]
+    linear_classes: [longitudinal_crack, transverse_crack]
+
+  # Severity classifier training (src/train_severity.py).
+  training:
+    labels_file: data/severity_crops/labels.csv
+    arch: mobilenet_v3_small
+    image_size: 224
+    epochs: 30
+    batch: 32
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    patience: 8
+    val_fraction: 0.2
+    min_per_level: 5
+    seed: 42
